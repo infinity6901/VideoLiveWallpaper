@@ -41,7 +41,7 @@ jobs:
             if grep -q "What went wrong" build.log 2>/dev/null; then
               echo "### Reason"
               echo '```'
-              sed -n '/What went wrong/,/^\* Try:/p' build.log | sed '$d' | head -60
+              sed -n '/What went wrong/,/^\* Try:/p' build.log | sed '$d' | head -15
               echo '```'
             fi
             echo "### Errors"
@@ -109,7 +109,7 @@ jobs:
             if grep -q "What went wrong" build.log 2>/dev/null; then
               echo "### Reason"
               echo '```'
-              sed -n '/What went wrong/,/^\* Try:/p' build.log | sed '$d' | head -60
+              sed -n '/What went wrong/,/^\* Try:/p' build.log | sed '$d' | head -15
               echo '```'
             fi
             echo "### Errors"
