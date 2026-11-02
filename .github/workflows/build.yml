@@ -21,11 +21,42 @@ jobs:
         with:
           gradle-version: '8.4'
       - name: Build debug APK
-        run: gradle assembleFossDebug --stacktrace
+        run: gradle assembleFossDebug --stacktrace 2>&1 | tee build.log
       - uses: actions/upload-artifact@v4
         with:
           name: VideoLiveWallpaper-debug
           path: app/build/outputs/apk/foss/debug/*.apk
+
+      - name: Failure report
+        if: failure()
+        run: |
+          {
+            echo "## ❌ Debug build failed"
+            echo
+            if grep -q "What went wrong" build.log 2>/dev/null; then
+              echo "### Reason"
+              echo '```'
+              sed -n '/What went wrong/,/^\* Try:/p' build.log | sed '$d' | head -60
+              echo '```'
+            fi
+            echo "### Errors"
+            echo '```'
+            grep -E "^e: |error:|FAILED|Execution failed|Could not resolve|Exception" build.log | sort -u | head -40 || true
+            echo '```'
+            echo
+            echo "Full log and Gradle reports are in the **Debug-build-failure-logs** artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^e: |error:|Execution failed|Could not resolve" build.log | sort -u | head -10 | while read -r l; do echo "::error::$l"; done || true
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Debug-build-failure-logs
+          path: |
+            build.log
+            app/build/reports/
+            app/build/outputs/logs/
+          if-no-files-found: ignore
 
   release:
     name: FOSS release APK
@@ -54,7 +85,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleFossRelease --stacktrace
+        run: gradle assembleFossRelease --stacktrace 2>&1 | tee build.log
       - uses: actions/upload-artifact@v4
         with:
           name: VideoLiveWallpaper-foss-release
@@ -64,3 +95,33 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/foss/release/*.apk
+      - name: Failure report
+        if: failure()
+        run: |
+          {
+            echo "## ❌ Release build failed"
+            echo
+            if grep -q "What went wrong" build.log 2>/dev/null; then
+              echo "### Reason"
+              echo '```'
+              sed -n '/What went wrong/,/^\* Try:/p' build.log | sed '$d' | head -60
+              echo '```'
+            fi
+            echo "### Errors"
+            echo '```'
+            grep -E "^e: |error:|FAILED|Execution failed|Could not resolve|Exception" build.log | sort -u | head -40 || true
+            echo '```'
+            echo
+            echo "Full log and Gradle reports are in the **Release-build-failure-logs** artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^e: |error:|Execution failed|Could not resolve" build.log | sort -u | head -10 | while read -r l; do echo "::error::$l"; done || true
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-build-failure-logs
+          path: |
+            build.log
+            app/build/reports/
+            app/build/outputs/logs/
+          if-no-files-found: ignore
