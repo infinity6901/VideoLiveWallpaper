@@ -145,6 +145,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         repository.updateClipRange(startMs, endMs)
     }
 
+    fun rotateClockwise() {
+        repository.rotateClockwise()
+    }
+
     fun toggleManualPause() {
         repository.toggleManualPause()
     }

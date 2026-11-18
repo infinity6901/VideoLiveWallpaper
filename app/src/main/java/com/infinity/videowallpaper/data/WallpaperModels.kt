@@ -43,6 +43,7 @@ data class VideoItem(
     val durationMs: Long = 0L,
     val clipStartMs: Long = 0L,
     val clipEndMs: Long = 0L,
+    val rotationDegrees: Int = 0,
 ) {
     val clipRange: ClipRange
         get() = ClipRange(clipStartMs, clipEndMs)
@@ -55,6 +56,7 @@ data class WallpaperConfig(
     val clipStartMs: Long = 0L,
     val clipEndMs: Long = 0L,
     val durationMs: Long = 0L,
+    val rotationDegrees: Int = 0,
     val playlist: List<VideoItem> = emptyList(),
     val playlistIndex: Int = 0,
     val loop: Boolean = true,
@@ -89,5 +91,11 @@ data class WallpaperConfig(
         val SPEED_VALUES = floatArrayOf(0.25f, 0.5f, 1.0f, 1.5f, 2.0f)
         val SPEED_LABELS = listOf("0.25×", "0.5×", "1×", "1.5×", "2×")
         val FPS_OPTIONS = listOf(24, 30, 60)
+        val ROTATION_OPTIONS = listOf(0, 90, 180, 270)
+
+        fun normalizeRotation(degrees: Int): Int {
+            val mod = ((degrees % 360) + 360) % 360
+            return if (mod in ROTATION_OPTIONS) mod else 0
+        }
     }
 }

@@ -45,6 +45,7 @@ fun VideoThumbnailCard(
     displayName: String,
     isLocalCopy: Boolean,
     clipSummary: String?,
+    rotationDegrees: Int = 0,
     onPreviewClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +99,19 @@ fun VideoThumbnailCard(
                     .padding(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (rotationDegrees != 0) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            text = "${rotationDegrees}°",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
                 if (!clipSummary.isNullOrBlank()) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.65f),

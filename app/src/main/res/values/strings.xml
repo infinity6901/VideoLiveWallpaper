@@ -13,6 +13,7 @@
     <string name="btn_pick_video">Pick Video</string>
     <string name="btn_add_playlist">Add to Playlist</string>
     <string name="btn_trim_video">Trim Loop</string>
+    <string name="btn_rotate">Rotate</string>
     <string name="btn_preview_video">Live Preview</string>
     <string name="btn_set_wallpaper">Set as Live Wallpaper</string>
     <string name="btn_clear_video">Clear video</string>
@@ -64,6 +65,8 @@
     <string name="fit_crop">Crop</string>
     <string name="fit_contain">Contain</string>
     <string name="fit_stretch">Stretch</string>
+    <string name="setting_video_rotation">Video Rotation</string>
+    <string name="setting_video_rotation_desc">Rotate landscape videos sideways to fill a portrait screen</string>
     <string name="setting_dim">Dim Brightness</string>
     <string name="setting_dim_desc">Darken the wallpaper in the GPU shader to improve legibility</string>
     <string name="setting_blur">Background Blur</string>

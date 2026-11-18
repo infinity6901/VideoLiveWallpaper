@@ -18,9 +18,12 @@ import com.infinity.videowallpaper.data.FitMode
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.math.cos
+import kotlin.math.sin
 
 data class ShaderParams(
     val fitMode: FitMode = FitMode.CROP,
+    val rotationDegrees: Int = 0,
     val dimAmount: Float = 0f,
     val blurAmount: Float = 0f,
     val vignetteAmount: Float = 0f,
@@ -34,8 +37,8 @@ data class ShaderParams(
  * Hardware-accelerated OpenGL ES 2.0 renderer attached to a [WallpaperService] [SurfaceHolder].
  *
  * Uses a single EGL producer on a dedicated [HandlerThread] so Media3 ExoPlayer renders frames
- * into an OES [SurfaceTexture] while the fragment shader applies real-time dimming, blur,
- * vignette, saturation/grayscale, exact Crop/Contain/Stretch scaling, parallax, and FPS capping.
+ * into an OES [SurfaceTexture] while the shader applies real-time 0/90/180/270 rotation, dimming,
+ * blur, vignette, saturation/grayscale, exact Crop/Contain/Stretch scaling, parallax, and FPS cap.
  */
 class GlVideoRenderer(
     private val surfaceHolder: SurfaceHolder,
@@ -75,6 +78,7 @@ class GlVideoRenderer(
     private var uTexMatrixLoc = -1
     private var uScaleLoc = -1
     private var uOffsetLoc = -1
+    private var uRotCosSinLoc = -1
     private var uDimLoc = -1
     private var uBlurLoc = -1
     private var uVignetteLoc = -1
@@ -230,7 +234,12 @@ class GlVideoRenderer(
             fitMode = currentParams.fitMode,
             parallaxEnabled = currentParams.parallaxEnabled,
             xOffset = currentParams.xOffset,
+            rotationDegrees = currentParams.rotationDegrees,
         )
+
+        val rad = Math.toRadians(currentParams.rotationDegrees.toDouble())
+        val rotCos = cos(rad).toFloat()
+        val rotSin = sin(rad).toFloat()
 
         GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight)
         GLES20.glClearColor(0f, 0f, 0f, 1f)
@@ -251,6 +260,7 @@ class GlVideoRenderer(
         GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, stMatrix, 0)
         GLES20.glUniform2f(uScaleLoc, transform.scaleX, transform.scaleY)
         GLES20.glUniform2f(uOffsetLoc, transform.offsetX, transform.offsetY)
+        GLES20.glUniform2f(uRotCosSinLoc, rotCos, rotSin)
         GLES20.glUniform1f(uDimLoc, currentParams.dimAmount.coerceIn(0f, 0.85f))
         GLES20.glUniform1f(uBlurLoc, currentParams.blurAmount.coerceIn(0f, 1f))
         GLES20.glUniform1f(uVignetteLoc, currentParams.vignetteAmount.coerceIn(0f, 1f))
@@ -352,6 +362,7 @@ class GlVideoRenderer(
         uTexMatrixLoc = GLES20.glGetUniformLocation(programId, "uTexMatrix")
         uScaleLoc = GLES20.glGetUniformLocation(programId, "uScale")
         uOffsetLoc = GLES20.glGetUniformLocation(programId, "uOffset")
+        uRotCosSinLoc = GLES20.glGetUniformLocation(programId, "uRotCosSin")
         uDimLoc = GLES20.glGetUniformLocation(programId, "uDim")
         uBlurLoc = GLES20.glGetUniformLocation(programId, "uBlur")
         uVignetteLoc = GLES20.glGetUniformLocation(programId, "uVignette")
@@ -415,13 +426,21 @@ class GlVideoRenderer(
             uniform mat4 uTexMatrix;
             uniform vec2 uScale;
             uniform vec2 uOffset;
+            uniform vec2 uRotCosSin;
             varying vec2 vTexCoord;
             varying vec2 vScreenUv;
 
             void main() {
                 vec2 pos = aPosition * uScale + uOffset;
                 gl_Position = vec4(pos, 0.0, 1.0);
-                vTexCoord = (uTexMatrix * vec4(aTexCoord, 0.0, 1.0)).xy;
+
+                vec2 centered = aTexCoord - vec2(0.5, 0.5);
+                vec2 rotated = vec2(
+                    centered.x * uRotCosSin.x - centered.y * uRotCosSin.y,
+                    centered.x * uRotCosSin.y + centered.y * uRotCosSin.x
+                ) + vec2(0.5, 0.5);
+
+                vTexCoord = (uTexMatrix * vec4(rotated, 0.0, 1.0)).xy;
                 vScreenUv = pos * 0.5 + 0.5;
             }
         """

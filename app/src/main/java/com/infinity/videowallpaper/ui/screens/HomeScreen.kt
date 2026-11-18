@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -232,6 +233,7 @@ fun HomeScreen(
                 displayName = config.videoDisplayName,
                 isLocalCopy = config.isLocalCopy,
                 clipSummary = clipSummary,
+                rotationDegrees = config.rotationDegrees,
                 onPreviewClick = { showPreview = true },
             )
 
@@ -251,14 +253,23 @@ fun HomeScreen(
                     Text(stringResource(R.string.btn_pick_video), maxLines = 1)
                 }
 
-                if (config.videoUri != null && config.durationMs >= 1_500L) {
+                if (config.videoUri != null) {
                     OutlinedButton(
-                        onClick = { showTrimmer = true },
+                        onClick = viewModel::rotateClockwise,
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Icon(Icons.Filled.ContentCut, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.btn_trim_video), maxLines = 1)
+                        Icon(Icons.Filled.Rotate90DegreesCw, contentDescription = stringResource(R.string.btn_rotate))
+                        Spacer(Modifier.width(4.dp))
+                        Text("${config.rotationDegrees}°", maxLines = 1)
+                    }
+                }
+
+                if (config.videoUri != null && config.durationMs >= 1_500L) {
+                    IconButton(onClick = { showTrimmer = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.ContentCut,
+                            contentDescription = stringResource(R.string.btn_trim_video),
+                        )
                     }
                 }
 
@@ -400,6 +411,7 @@ fun HomeScreen(
     if (showPreview && config.videoUri != null) {
         VideoPreviewDialog(
             config = config,
+            onRotate = viewModel::rotateClockwise,
             onDismiss = { showPreview = false },
         )
     }

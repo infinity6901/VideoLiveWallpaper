@@ -6,18 +6,22 @@ import android.os.Looper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,12 +44,13 @@ import com.infinity.videowallpaper.engine.ShaderParams
 
 /**
  * Full-screen in-app live preview powered by the exact same [GlVideoRenderer] + Media3
- * [ExoPlayer] pipeline as [VideoWallpaperService], so users can preview dimming, blur,
- * vignette, saturation, fit mode, speed, and clip range before applying.
+ * [ExoPlayer] pipeline as [VideoWallpaperService], with an inline Rotate 90° button
+ * so users can orient landscape videos sideways in real time.
  */
 @Composable
 fun VideoPreviewDialog(
     config: WallpaperConfig,
+    onRotate: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val uriString = config.videoUri ?: return
@@ -73,6 +78,21 @@ fun VideoPreviewDialog(
     }
 
     val rendererRef = remember { arrayOfNulls<GlVideoRenderer>(1) }
+
+    val shaderParams = ShaderParams(
+        fitMode = config.fitMode,
+        rotationDegrees = config.rotationDegrees,
+        dimAmount = config.dimAmount,
+        blurAmount = config.blurAmount,
+        vignetteAmount = config.vignetteAmount,
+        saturation = config.saturation,
+        parallaxEnabled = false,
+        fpsCap = config.fpsCap,
+    )
+
+    LaunchedEffect(shaderParams) {
+        rendererRef[0]?.updateParams(shaderParams)
+    }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -123,15 +143,7 @@ fun VideoPreviewDialog(
                                 gl.start(
                                     width = frame.width().coerceAtLeast(1),
                                     height = frame.height().coerceAtLeast(1),
-                                    initialParams = ShaderParams(
-                                        fitMode = config.fitMode,
-                                        dimAmount = config.dimAmount,
-                                        blurAmount = config.blurAmount,
-                                        vignetteAmount = config.vignetteAmount,
-                                        saturation = config.saturation,
-                                        parallaxEnabled = false,
-                                        fpsCap = config.fpsCap,
-                                    ),
+                                    initialParams = shaderParams,
                                 )
                             }
 
@@ -154,20 +166,36 @@ fun VideoPreviewDialog(
                 },
             )
 
-            Surface(
-                color = Color.Black.copy(alpha = 0.55f),
-                shape = CircleShape,
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
                     .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.btn_close),
-                        tint = Color.White,
-                    )
+                Surface(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    shape = CircleShape,
+                ) {
+                    IconButton(onClick = onRotate) {
+                        Icon(
+                            imageVector = Icons.Filled.Rotate90DegreesCw,
+                            contentDescription = stringResource(R.string.btn_rotate),
+                            tint = Color.White,
+                        )
+                    }
+                }
+                Surface(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    shape = CircleShape,
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.btn_close),
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
         }

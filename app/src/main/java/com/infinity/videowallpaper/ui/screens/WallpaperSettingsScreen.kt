@@ -118,6 +118,14 @@ fun WallpaperSettingsScreen(
                 onSelect = viewModel::setFitMode,
             )
 
+            ChipSelectorRow(
+                title = stringResource(R.string.setting_video_rotation),
+                subtitle = stringResource(R.string.setting_video_rotation_desc),
+                options = WallpaperConfig.ROTATION_OPTIONS.map { it to "$it°" },
+                selected = config.rotationDegrees,
+                onSelect = viewModel::setRotationDegrees,
+            )
+
             ValueSliderRow(
                 title = stringResource(R.string.setting_dim),
                 subtitle = stringResource(R.string.setting_dim_desc),

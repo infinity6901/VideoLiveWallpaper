@@ -90,6 +90,21 @@ class GlTransformMathTest {
     }
 
     @Test
+    fun rotate90SwapsLandscapeVideoToFillPortraitScreen() {
+        val t = GlTransformMath.compute(
+            videoWidth = 1920,
+            videoHeight = 1080,
+            surfaceWidth = 1240,
+            surfaceHeight = 2772,
+            fitMode = FitMode.CROP,
+            rotationDegrees = 90,
+        )
+        // Rotated effective aspect = 1080/1920 = 0.5625, surfaceAspect = 1240/2772 = 0.4473 -> scaleX ~= 1.2575
+        assertEquals(1.2575f, t.scaleX, 0.01f)
+        assertEquals(1f, t.scaleY, 0.001f)
+    }
+
+    @Test
     fun invalidDimensionsReturnIdentityTransform() {
         val t = GlTransformMath.compute(0, 1080, 1080, 2400, FitMode.CROP)
         assertEquals(1f, t.scaleX, 0.001f)

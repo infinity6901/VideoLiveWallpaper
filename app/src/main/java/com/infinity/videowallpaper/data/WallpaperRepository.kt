@@ -46,6 +46,7 @@ class WallpaperRepository(context: Context) {
             clipStartMs = prefs.getLong(KEY_CLIP_START, 0L).coerceAtLeast(0L),
             clipEndMs = prefs.getLong(KEY_CLIP_END, 0L).coerceAtLeast(0L),
             durationMs = prefs.getLong(KEY_DURATION_MS, 0L).coerceAtLeast(0L),
+            rotationDegrees = WallpaperConfig.normalizeRotation(prefs.getInt(KEY_ROTATION_DEGREES, 0)),
             playlist = decodePlaylist(prefs.getString(KEY_PLAYLIST_JSON, null)),
             playlistIndex = prefs.getInt(KEY_PLAYLIST_INDEX, 0).coerceAtLeast(0),
             loop = prefs.getBoolean(KEY_LOOP, true),
@@ -77,37 +78,40 @@ class WallpaperRepository(context: Context) {
     /** Batched atomic update to SharedPreferences. */
     fun update(transform: (WallpaperConfig) -> WallpaperConfig) {
         val next = transform(_config.value)
+        val normRot = WallpaperConfig.normalizeRotation(next.rotationDegrees)
+        val finalNext = next.copy(rotationDegrees = normRot)
         prefs.edit {
-            putString(KEY_VIDEO_URI, next.videoUri)
-            putString(KEY_VIDEO_NAME, next.videoDisplayName)
-            putBoolean(KEY_IS_LOCAL_COPY, next.isLocalCopy)
-            putLong(KEY_CLIP_START, next.clipStartMs)
-            putLong(KEY_CLIP_END, next.clipEndMs)
-            putLong(KEY_DURATION_MS, next.durationMs)
-            putString(KEY_PLAYLIST_JSON, encodePlaylist(next.playlist))
-            putInt(KEY_PLAYLIST_INDEX, next.playlistIndex)
-            putBoolean(KEY_LOOP, next.loop)
-            putBoolean(KEY_MUTE, next.mute)
-            putInt(KEY_SPEED_INDEX, next.speedIndex.coerceIn(0, WallpaperConfig.SPEED_VALUES.lastIndex))
-            putInt(KEY_FIT_MODE, next.fitMode.ordinal)
-            putFloat(KEY_DIM, next.dimAmount.coerceIn(0f, 0.8f))
-            putFloat(KEY_BLUR, next.blurAmount.coerceIn(0f, 1f))
-            putFloat(KEY_VIGNETTE, next.vignetteAmount.coerceIn(0f, 1f))
-            putFloat(KEY_SATURATION, next.saturation.coerceIn(0f, 1.5f))
-            putBoolean(KEY_PARALLAX, next.parallaxEnabled)
-            putBoolean(KEY_PAUSE_BATTERY_SAVER, next.pauseOnBatterySaver)
-            putInt(KEY_LOW_BATTERY, next.lowBatteryThreshold.coerceIn(0, 50))
-            putInt(KEY_FPS_CAP, next.fpsCap)
-            putInt(KEY_PLAYBACK_SCOPE, next.playbackScope.ordinal)
-            putBoolean(KEY_DOUBLE_TAP, next.doubleTapToPause)
-            putBoolean(KEY_MANUAL_PAUSED, next.manualPaused)
-            putInt(KEY_ROTATION_INTERVAL, next.rotationInterval.ordinal)
-            putLong(KEY_LAST_ROTATED, next.lastRotatedAtMs)
-            putBoolean(KEY_COPY_LOCAL, next.copyToLocalStorage)
-            putInt(KEY_THEME_MODE, next.themeMode.ordinal)
-            putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
+            putString(KEY_VIDEO_URI, finalNext.videoUri)
+            putString(KEY_VIDEO_NAME, finalNext.videoDisplayName)
+            putBoolean(KEY_IS_LOCAL_COPY, finalNext.isLocalCopy)
+            putLong(KEY_CLIP_START, finalNext.clipStartMs)
+            putLong(KEY_CLIP_END, finalNext.clipEndMs)
+            putLong(KEY_DURATION_MS, finalNext.durationMs)
+            putInt(KEY_ROTATION_DEGREES, finalNext.rotationDegrees)
+            putString(KEY_PLAYLIST_JSON, encodePlaylist(finalNext.playlist))
+            putInt(KEY_PLAYLIST_INDEX, finalNext.playlistIndex)
+            putBoolean(KEY_LOOP, finalNext.loop)
+            putBoolean(KEY_MUTE, finalNext.mute)
+            putInt(KEY_SPEED_INDEX, finalNext.speedIndex.coerceIn(0, WallpaperConfig.SPEED_VALUES.lastIndex))
+            putInt(KEY_FIT_MODE, finalNext.fitMode.ordinal)
+            putFloat(KEY_DIM, finalNext.dimAmount.coerceIn(0f, 0.8f))
+            putFloat(KEY_BLUR, finalNext.blurAmount.coerceIn(0f, 1f))
+            putFloat(KEY_VIGNETTE, finalNext.vignetteAmount.coerceIn(0f, 1f))
+            putFloat(KEY_SATURATION, finalNext.saturation.coerceIn(0f, 1.5f))
+            putBoolean(KEY_PARALLAX, finalNext.parallaxEnabled)
+            putBoolean(KEY_PAUSE_BATTERY_SAVER, finalNext.pauseOnBatterySaver)
+            putInt(KEY_LOW_BATTERY, finalNext.lowBatteryThreshold.coerceIn(0, 50))
+            putInt(KEY_FPS_CAP, finalNext.fpsCap)
+            putInt(KEY_PLAYBACK_SCOPE, finalNext.playbackScope.ordinal)
+            putBoolean(KEY_DOUBLE_TAP, finalNext.doubleTapToPause)
+            putBoolean(KEY_MANUAL_PAUSED, finalNext.manualPaused)
+            putInt(KEY_ROTATION_INTERVAL, finalNext.rotationInterval.ordinal)
+            putLong(KEY_LAST_ROTATED, finalNext.lastRotatedAtMs)
+            putBoolean(KEY_COPY_LOCAL, finalNext.copyToLocalStorage)
+            putInt(KEY_THEME_MODE, finalNext.themeMode.ordinal)
+            putBoolean(KEY_DYNAMIC_COLOR, finalNext.dynamicColor)
         }
-        _config.value = next
+        _config.value = finalNext
     }
 
     fun selectVideo(item: VideoItem, addToPlaylist: Boolean = true) {
@@ -130,12 +134,36 @@ class WallpaperRepository(context: Context) {
                 durationMs = item.durationMs,
                 clipStartMs = item.clipStartMs,
                 clipEndMs = item.clipEndMs,
+                rotationDegrees = WallpaperConfig.normalizeRotation(item.rotationDegrees),
                 playlist = updatedList,
                 playlistIndex = newIndex,
                 manualPaused = false,
                 lastRotatedAtMs = System.currentTimeMillis(),
             )
         }
+    }
+
+    fun setRotationDegrees(degrees: Int) {
+        val normalized = WallpaperConfig.normalizeRotation(degrees)
+        update { cur ->
+            val uri = cur.videoUri
+            val updatedList = if (uri != null) {
+                cur.playlist.map {
+                    if (it.uri == uri) it.copy(rotationDegrees = normalized) else it
+                }
+            } else {
+                cur.playlist
+            }
+            cur.copy(
+                rotationDegrees = normalized,
+                playlist = updatedList,
+            )
+        }
+    }
+
+    fun rotateClockwise() {
+        val next = WallpaperConfig.normalizeRotation(_config.value.rotationDegrees + 90)
+        setRotationDegrees(next)
     }
 
     fun updateClipRange(startMs: Long, endMs: Long) {
@@ -169,6 +197,7 @@ class WallpaperRepository(context: Context) {
                     durationMs = fallback?.durationMs ?: 0L,
                     clipStartMs = fallback?.clipStartMs ?: 0L,
                     clipEndMs = fallback?.clipEndMs ?: 0L,
+                    rotationDegrees = fallback?.rotationDegrees ?: 0,
                     playlist = nextList,
                     playlistIndex = 0,
                 )
@@ -195,6 +224,7 @@ class WallpaperRepository(context: Context) {
                 durationMs = nextItem.durationMs,
                 clipStartMs = nextItem.clipStartMs,
                 clipEndMs = nextItem.clipEndMs,
+                rotationDegrees = WallpaperConfig.normalizeRotation(nextItem.rotationDegrees),
                 playlistIndex = nextIdx,
                 lastRotatedAtMs = nowMs,
             )
@@ -221,6 +251,7 @@ class WallpaperRepository(context: Context) {
         private const val KEY_CLIP_START = "clip_start_ms"
         private const val KEY_CLIP_END = "clip_end_ms"
         private const val KEY_DURATION_MS = "duration_ms"
+        private const val KEY_ROTATION_DEGREES = "rotation_degrees"
         private const val KEY_PLAYLIST_JSON = "playlist_json"
         private const val KEY_PLAYLIST_INDEX = "playlist_index"
         private const val KEY_LOOP = "loop"
@@ -255,7 +286,8 @@ class WallpaperRepository(context: Context) {
                         put("dur", item.durationMs)
                         put("start", item.clipStartMs)
                         put("end", item.clipEndMs)
-                    }
+                        put("rot", item.rotationDegrees)
+                    },
                 )
             }
             return arr.toString()
@@ -278,7 +310,8 @@ class WallpaperRepository(context: Context) {
                                     durationMs = obj.optLong("dur", 0L).coerceAtLeast(0L),
                                     clipStartMs = obj.optLong("start", 0L).coerceAtLeast(0L),
                                     clipEndMs = obj.optLong("end", 0L).coerceAtLeast(0L),
-                                )
+                                    rotationDegrees = WallpaperConfig.normalizeRotation(obj.optInt("rot", 0)),
+                                ),
                             )
                         }
                     }

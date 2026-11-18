@@ -324,6 +324,7 @@ class VideoWallpaperService : WallpaperService() {
 
         private fun buildShaderParams(config: WallpaperConfig): ShaderParams = ShaderParams(
             fitMode = config.fitMode,
+            rotationDegrees = config.rotationDegrees,
             dimAmount = config.dimAmount,
             blurAmount = config.blurAmount,
             vignetteAmount = config.vignetteAmount,

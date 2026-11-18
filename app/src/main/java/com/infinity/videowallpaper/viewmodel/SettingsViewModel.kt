@@ -23,6 +23,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setMute(value: Boolean) = repository.update { it.copy(mute = value) }
     fun setSpeedIndex(value: Int) = repository.update { it.copy(speedIndex = value) }
     fun setFitMode(value: FitMode) = repository.update { it.copy(fitMode = value) }
+    fun setRotationDegrees(degrees: Int) = repository.setRotationDegrees(degrees)
     fun setDimAmount(value: Float) = repository.update { it.copy(dimAmount = value) }
     fun setBlurAmount(value: Float) = repository.update { it.copy(blurAmount = value) }
     fun setVignetteAmount(value: Float) = repository.update { it.copy(vignetteAmount = value) }
