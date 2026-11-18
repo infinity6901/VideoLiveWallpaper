@@ -333,7 +333,7 @@ jobs:
               echo "::error::Publishing needs signing secrets (SIGNING_KEY/KEYSTORE_BASE64, ALIAS/KEY_ALIAS, KEY_PASSWORD, KEY_STORE_PASSWORD/KEYSTORE_PASSWORD)."
               exit 1
             fi
-            echo "::warning::No signing secrets: FOSS release APK will be unsigned."
+            echo "::warning::No signing secrets: FOSS release APK will be signed with the debug key."
           fi
 
       - name: Build FOSS release APK
@@ -358,8 +358,9 @@ jobs:
             ci_step release-apk-verify "FOSS release APK: package name + valid signature" \
               bash .github/scripts/verify-apk.sh "out/videowallpaper-foss-release-$VN.apk"
           else
-            cp "$APK" "out/videowallpaper-foss-release-unsigned-$VN.apk"
-            ci_record release-apk-verify NOT_RUN "Unsigned release APK (no signing secrets configured)"
+            cp "$APK" "out/videowallpaper-foss-release-debugsigned-$VN.apk"
+            ci_step release-apk-verify "FOSS release APK (debug-signed fallback): package name + valid signature" \
+              bash .github/scripts/verify-apk.sh "out/videowallpaper-foss-release-debugsigned-$VN.apk"
           fi
           mkdir -p release-extras
           find app/build/outputs/mapping -type f -exec cp {} release-extras/ \; 2>/dev/null || true
