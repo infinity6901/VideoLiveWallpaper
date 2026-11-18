@@ -1,31 +1,112 @@
 <resources>
     <string name="app_name">Video Live Wallpaper</string>
     <string name="wallpaper_label">Video Live Wallpaper</string>
-    <string name="wallpaper_description">Play any video from your gallery as a live wallpaper</string>
+    <string name="wallpaper_description">Hardware-accelerated video live wallpaper with shader effects, trimming, and smart battery controls</string>
     <string name="settings_title">Wallpaper Settings</string>
+    <string name="qs_tile_label">Video Wallpaper</string>
+    <string name="qs_tile_playing">Playing</string>
+    <string name="qs_tile_paused">Paused</string>
 
     <!-- Home screen -->
-    <string name="home_headline">Video Live Wallpaper</string>
-    <string name="home_subtitle">Pick a video from your gallery and set it as your live wallpaper</string>
+    <string name="home_subtitle">Pick any video, trim the loop, preview live effects, and set it as your wallpaper</string>
+    <string name="selected_video_header">Selected Video</string>
     <string name="btn_pick_video">Pick Video</string>
+    <string name="btn_add_playlist">Add to Playlist</string>
+    <string name="btn_trim_video">Trim Loop</string>
+    <string name="btn_preview_video">Live Preview</string>
     <string name="btn_set_wallpaper">Set as Live Wallpaper</string>
+    <string name="btn_clear_video">Clear video</string>
     <string name="btn_settings">Settings</string>
+    <string name="btn_back">Back</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_apply">Apply</string>
+    <string name="btn_reset">Reset</string>
     <string name="no_video_selected">No video selected</string>
-    <string name="video_selected">Video selected</string>
-    <string name="permission_required">Storage permission is required to pick a video.</string>
-    <string name="grant_permission">Grant Permission</string>
+    <string name="tap_to_preview">Tap to preview</string>
+    <string name="status_active">Live Wallpaper Active</string>
+    <string name="status_inactive">Not Active Yet</string>
+    <string name="status_paused">Paused via Gesture / Tile</string>
+    <string name="recent_playlist_header">Playlist &amp; Recent Videos</string>
+    <string name="playlist_empty_hint">Add multiple videos to rotate automatically</string>
+    <string name="btn_next_video">Next Video</string>
+    <string name="btn_toggle_pause">Pause / Resume</string>
+    <string name="error_no_wallpaper_picker">This device does not support live wallpapers.</string>
+    <string name="error_copy_failed">Could not save local copy; using original file link.</string>
+    <string name="copied_locally_badge">Saved locally</string>
+    <string name="how_to_use_title">How to use</string>
+    <string name="how_to_use_step_1">1. Tap Pick Video to choose any MP4, MOV, MKV, or WebM — zero storage permissions needed.</string>
+    <string name="how_to_use_step_2">2. Tap the thumbnail to preview dimming, blur, fit mode, and speed live, or trim the loop.</string>
+    <string name="how_to_use_step_3">3. Tap Set as Live Wallpaper to apply it to your home or lock screen.</string>
+    <string name="how_to_use_step_4">4. Double-tap the home screen or use the Quick Settings tile to pause anytime.</string>
 
-    <!-- Settings screen -->
+    <!-- Trimmer -->
+    <string name="trimmer_title">Trim Video Loop</string>
+    <string name="trimmer_subtitle">Non-destructive loop range (no re-encoding required)</string>
+    <string name="trimmer_full_video">Full video</string>
+
+    <!-- Settings sections -->
+    <string name="section_playback">Playback</string>
+    <string name="section_visual">Visual &amp; Shader Effects</string>
+    <string name="section_power">Battery &amp; Gestures</string>
+    <string name="section_playlist">Playlist &amp; Storage</string>
+    <string name="section_appearance">Appearance</string>
+
+    <!-- Playback settings -->
     <string name="setting_loop">Loop Video</string>
-    <string name="setting_loop_desc">Restart the video when it ends</string>
+    <string name="setting_loop_desc">Gaplessly restart the video when it ends</string>
     <string name="setting_mute">Mute Audio</string>
-    <string name="setting_mute_desc">Play without sound</string>
-    <string name="setting_fit_mode">Fit Mode</string>
-    <string name="fit_crop">Crop to Fill</string>
-    <string name="fit_contain">Fit Inside</string>
-    <string name="fit_stretch">Stretch</string>
+    <string name="setting_mute_desc">Play without sound (auto-mutes during music or calls)</string>
     <string name="setting_speed">Playback Speed</string>
-    <string name="setting_brightness">Dim Brightness</string>
-    <string name="setting_brightness_desc">Darken the wallpaper to save battery</string>
-    <string name="settings_saved">Settings saved</string>
+
+    <!-- Visual settings -->
+    <string name="setting_fit_mode">Fit Mode</string>
+    <string name="setting_fit_mode_desc">How the video is scaled to fill the screen</string>
+    <string name="fit_crop">Crop</string>
+    <string name="fit_contain">Contain</string>
+    <string name="fit_stretch">Stretch</string>
+    <string name="setting_dim">Dim Brightness</string>
+    <string name="setting_dim_desc">Darken the wallpaper in the GPU shader to improve legibility</string>
+    <string name="setting_blur">Background Blur</string>
+    <string name="setting_blur_desc">Soften busy videos so app icons stay crisp</string>
+    <string name="setting_vignette">Vignette</string>
+    <string name="setting_vignette_desc">Subtle edge darkening around the screen frame</string>
+    <string name="setting_saturation">Saturation</string>
+    <string name="setting_saturation_desc">Adjust color intensity (0% = grayscale, 100% = original)</string>
+    <string name="setting_parallax">Home Screen Parallax</string>
+    <string name="setting_parallax_desc">Pan wide videos smoothly as you swipe launcher pages</string>
+
+    <!-- Power & gesture settings -->
+    <string name="setting_pause_battery_saver">Pause in Battery Saver</string>
+    <string name="setting_pause_battery_saver_desc">Hold a static frame while Android Battery Saver is on</string>
+    <string name="setting_low_battery">Low-Battery Auto-Pause</string>
+    <string name="setting_low_battery_desc">Pause playback when battery drops below threshold (0% = off)</string>
+    <string name="setting_fps_cap">Frame Rate Cap</string>
+    <string name="setting_fps_cap_desc">Limit GPU redraws to save battery on 120 Hz screens</string>
+    <string name="setting_playback_scope">Playback Screen</string>
+    <string name="setting_playback_scope_desc">Choose where the wallpaper animates</string>
+    <string name="scope_both">Both</string>
+    <string name="scope_home_only">Home Only</string>
+    <string name="scope_lock_only">Lock Only</string>
+    <string name="setting_double_tap">Double-Tap to Pause</string>
+    <string name="setting_double_tap_desc">Double-tap an empty area on the home screen to pause or resume</string>
+
+    <!-- Playlist & storage -->
+    <string name="setting_rotation">Auto-Rotate Playlist</string>
+    <string name="setting_rotation_desc">Automatically switch to the next queued video</string>
+    <string name="rotation_off">Off</string>
+    <string name="rotation_unlock">On Unlock</string>
+    <string name="rotation_hourly">Hourly</string>
+    <string name="rotation_daily">Daily</string>
+    <string name="setting_copy_local">Keep Local Copy</string>
+    <string name="setting_copy_local_desc">Copy picked videos into private app storage so gallery deletes never break your wallpaper</string>
+
+    <!-- Appearance -->
+    <string name="setting_theme">App Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_amoled">AMOLED</string>
+    <string name="setting_dynamic_color">Dynamic Color (Material You)</string>
+    <string name="setting_dynamic_color_desc">Match accent colors to your system palette (Android 12+)</string>
+    <string name="settings_auto_saved">Changes apply immediately to your live wallpaper</string>
 </resources>

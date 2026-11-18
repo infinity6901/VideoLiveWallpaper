@@ -2,5 +2,5 @@
 <wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/wallpaper_description"
     android:label="@string/wallpaper_label"
-    android:settingsActivity="com.example.videowallpaper.ui.screens.WallpaperSettingsActivity"
+    android:settingsActivity="com.infinity.videowallpaper.WallpaperSettingsActivity"
     android:thumbnail="@drawable/ic_wallpaper_thumb" />

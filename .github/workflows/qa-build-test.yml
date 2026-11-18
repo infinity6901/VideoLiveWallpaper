@@ -1,0 +1,563 @@
+name: QA - Build, Test & Release
+
+# Multi-stage QA pipeline for VideoLiveWallpaper:
+#
+#   verify         Stage 1 / Gate 1 : dependencies, Kotlin+Java compile, resources, merged manifest
+#                                     validation (WallpaperService, QS Tile, zero storage perms),
+#                                     debug APK + verify, JVM unit tests, Android Lint,
+#                                     compiler/deprecation warnings, static-review hints
+#   build-release  FOSS release variant (R8 minify + shrink) + signature check + R8 mapping
+#   device-tests   Stage 2 (emulator): install + cold launch (MainActivity + WallpaperSettingsActivity),
+#                                     background/foreground, rotation, lock/unlock lifecycle cycles,
+#                                     crash/ANR detection, logcat + screenshot capture
+#   report         QA report (PASS / FAIL / NOT RUN) + failure report (job summary + artifacts)
+#   release        Optional: GitHub Release with APKs + qa-report.md (workflow_dispatch -> publish_release or v* tag)
+#
+# Artifacts (each uploaded separately, even when a job fails):
+#   unit-test-reports | lint-reports | build-logs | videowallpaper-debug-apk-<ver> |
+#   videowallpaper-release-apk-<ver> | release-build-logs | device-test-logs |
+#   device-logcat | qa-report | failure-report
+#
+# Signing (optional for CI, REQUIRED for publishing):
+#   Supports either (SIGNING_KEY / SIGN_KEY, ALIAS, KEY_PASSWORD, KEY_STORE_PASSWORD)
+#   or (KEYSTORE_BASE64, KEY_ALIAS, KEY_PASSWORD, KEYSTORE_PASSWORD).
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: 'Also build the FOSS release (R8) APK'
+        type: boolean
+        default: true
+      run_device_tests:
+        description: 'Run the emulator tests (launch + settings + lifecycle checks)'
+        type: boolean
+        default: true
+      lifecycle_cycles:
+        description: 'Repeat count for the emulator background/rotate/lock cycles'
+        type: number
+        default: 5
+      strict_lint:
+        description: 'Fail the run when Android Lint reports errors'
+        type: boolean
+        default: false
+      publish_release:
+        description: 'Publish a GitHub Release with the APKs (needs signing secrets)'
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Release tag (empty = v<versionName>-<short sha>)'
+        type: string
+        default: ''
+      prerelease:
+        description: 'Mark the release as a pre-release'
+        type: boolean
+        default: false
+  push:
+    branches: [ 'main', 'master' ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ 'main', 'master' ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qa-build-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------------------------------------
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version_name: ${{ steps.plan.outputs.version_name }}
+      build_release: ${{ steps.plan.outputs.build_release }}
+      run_device: ${{ steps.plan.outputs.run_device }}
+      cycles: ${{ steps.plan.outputs.cycles }}
+      strict_lint: ${{ steps.plan.outputs.strict_lint }}
+      publish: ${{ steps.plan.outputs.publish }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide what to run
+        id: plan
+        env:
+          IN_BUILD_RELEASE: ${{ inputs.build_release }}
+          IN_RUN_DEVICE: ${{ inputs.run_device_tests }}
+          IN_CYCLES: ${{ inputs.lifecycle_cycles }}
+          IN_STRICT_LINT: ${{ inputs.strict_lint }}
+          IN_PUBLISH: ${{ inputs.publish_release }}
+          IN_TAG: ${{ inputs.release_tag }}
+          IN_PRERELEASE: ${{ inputs.prerelease }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+        run: |
+          BUILD_RELEASE="${IN_BUILD_RELEASE:-true}"
+          RUN_DEVICE="${IN_RUN_DEVICE:-true}"
+          CYCLES="${IN_CYCLES:-5}"
+          STRICT="${IN_STRICT_LINT:-false}"
+          PUBLISH="${IN_PUBLISH:-false}"
+          PRERELEASE="${IN_PRERELEASE:-false}"
+
+          if [[ "$REF" == refs/tags/v* ]]; then
+            PUBLISH="true"
+            BUILD_RELEASE="true"
+            TAG="$REF_NAME"
+          else
+            TAG="$IN_TAG"
+          fi
+          [ "$PUBLISH" = "true" ] && BUILD_RELEASE="true"
+
+          VERSION_NAME=$(grep -oP 'versionName\s+"?\K[^"\x27]+' app/build.gradle | head -n1)
+          [ -z "$VERSION_NAME" ] && VERSION_NAME="2.0.0"
+          [ -z "$TAG" ] && TAG="v${VERSION_NAME}-$(echo "$GITHUB_SHA" | cut -c1-7)"
+
+          {
+            echo "version_name=$VERSION_NAME"
+            echo "build_release=$BUILD_RELEASE"
+            echo "run_device=$RUN_DEVICE"
+            echo "cycles=$CYCLES"
+            echo "strict_lint=$STRICT"
+            echo "publish=$PUBLISH"
+            echo "release_tag=$TAG"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Plan: version=$VERSION_NAME release=$BUILD_RELEASE device=$RUN_DEVICE strict_lint=$STRICT publish=$PUBLISH tag=$TAG"
+
+  # ------------------------------------------------------------------------------------------------
+  # Stage 1 / Gate 1
+  verify:
+    name: "Gate 1: build + unit tests + lint"
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      apk_built: ${{ steps.collect.outputs.apk_built }}
+    env:
+      VN: ${{ needs.plan.outputs.version_name }}
+      STRICT_LINT: ${{ needs.plan.outputs.strict_lint }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-android-build
+
+      - name: Make scripts executable
+        run: chmod +x .github/scripts/*.sh
+
+      - name: "1.1 Dependency resolution"
+        env:
+          CI_FAIL_IF_LOG_MATCHES: ' FAILED$'
+        run: |
+          source .github/scripts/ci-step.sh
+          ci_step dependencies "Dependency resolution (fossDebugRuntimeClasspath)" \
+            gradle :app:dependencies --configuration fossDebugRuntimeClasspath
+
+      - name: "1.1 Kotlin + Java compilation"
+        run: |
+          source .github/scripts/ci-step.sh
+          ci_step compile "Kotlin + Java compilation (fossDebug)" \
+            gradle :app:compileFossDebugKotlin :app:compileFossDebugJavaWithJavac \
+              --warning-mode all --no-build-cache --stacktrace
+          mkdir -p compiler-warnings
+          grep -E '^w: ' ci-logs/compile.log | sort -u > compiler-warnings/compiler-warnings.txt || true
+          grep -iE 'deprecat' compiler-warnings/compiler-warnings.txt > compiler-warnings/deprecated-api-warnings.txt || true
+          touch compiler-warnings/compiler-warnings.txt compiler-warnings/deprecated-api-warnings.txt
+          echo "compiler warnings: $(wc -l < compiler-warnings/compiler-warnings.txt), deprecations: $(wc -l < compiler-warnings/deprecated-api-warnings.txt)"
+
+      - name: "1.1 Resource processing + manifest validation"
+        run: |
+          source .github/scripts/ci-step.sh
+          ci_step resources "Resource processing (fossDebug)" gradle :app:processFossDebugResources --stacktrace
+          ci_step manifest "Manifest merge (fossDebug)" gradle :app:processFossDebugMainManifest --stacktrace
+
+          mkdir -p manifests
+          MM=$(find app/build -path '*merged_manifest*' -name AndroidManifest.xml | grep -i debug | head -n1)
+          REPORT=$(find app/build -name 'manifest-merger-*debug*-report.txt' | head -n1)
+          [ -n "$MM" ] && cp "$MM" manifests/AndroidManifest.merged.xml
+          [ -n "$REPORT" ] && cp "$REPORT" manifests/manifest-merger-report.txt
+
+          ci_step manifest-content "Merged manifest declares WallpaperService, QS Tile, and zero unnecessary storage perms" python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          p = "manifests/AndroidManifest.merged.xml"
+          try:
+              root = ET.parse(p).getroot()
+          except (OSError, ET.ParseError) as e:
+              print("cannot parse merged manifest:", e); sys.exit(1)
+          ns = "{http://schemas.android.com/apk/res/android}"
+          perms = {u.get(ns + "name") for u in root.iter("uses-permission")}
+          for forbidden in ("android.permission.READ_MEDIA_VIDEO", "android.permission.READ_EXTERNAL_STORAGE", "android.permission.FOREGROUND_SERVICE"):
+              if forbidden in perms:
+                  print(f"Forbidden unnecessary permission found in manifest: {forbidden}"); sys.exit(1)
+          services = {s.get(ns + "name"): s.get(ns + "permission") for s in root.iter("service")}
+          if not any(k.endswith(".service.VideoWallpaperService") and v == "android.permission.BIND_WALLPAPER" for k, v in services.items()):
+              print("VideoWallpaperService with BIND_WALLPAPER is missing"); sys.exit(1)
+          if not any(k.endswith(".service.WallpaperQuickTileService") and v == "android.permission.BIND_QUICK_SETTINGS_TILE" for k, v in services.items()):
+              print("WallpaperQuickTileService with BIND_QUICK_SETTINGS_TILE is missing"); sys.exit(1)
+          print("Verified VideoWallpaperService, WallpaperQuickTileService, and clean permission set.")
+          PY
+
+      - name: "1.1 Debug APK packaging"
+        run: |
+          source .github/scripts/ci-step.sh
+          ci_step debug-apk "Assemble FOSS debug APK" gradle :app:assembleFossDebug --stacktrace
+
+      - name: Collect + verify debug APK
+        id: collect
+        run: |
+          source .github/scripts/ci-step.sh
+          mkdir -p out
+          APK=$(find app/build/outputs/apk/foss/debug -name "*.apk" | head -n1)
+          if [ -n "$APK" ]; then
+            cp "$APK" "out/videowallpaper-debug-$VN.apk"
+            echo "apk_built=true" >> "$GITHUB_OUTPUT"
+            ci_step apk-verify "Debug APK: package name, SDK/ABI info, valid signature" \
+              bash .github/scripts/verify-apk.sh "out/videowallpaper-debug-$VN.apk"
+          else
+            echo "apk_built=false" >> "$GITHUB_OUTPUT"
+            ci_record apk-verify FAIL "Debug APK was not produced"
+          fi
+
+      - name: "1.2 Automated unit tests"
+        run: |
+          source .github/scripts/ci-step.sh
+          ci_step unit-tests "JVM unit tests (fossDebug)" \
+            gradle :app:testFossDebugUnitTest --continue --no-build-cache --stacktrace
+
+      - name: "1.3 Android Lint"
+        run: |
+          source .github/scripts/ci-step.sh
+          ci_step lint "Android Lint (fossDebug)" \
+            gradle :app:lintFossDebug --continue --stacktrace
+
+      - name: "1.3 Static review hints (heuristic, informational)"
+        if: ${{ !cancelled() }}
+        run: bash .github/scripts/static-review.sh static-review
+
+      - name: Upload unit test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            app/build/test-results/testFossDebugUnitTest/**
+            app/build/reports/tests/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload lint reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            app/build/reports/lint-results*
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload build logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ci-logs/
+            ci-status/
+            compiler-warnings/
+            static-review/
+            manifests/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload debug APK
+        if: ${{ !cancelled() && steps.collect.outputs.apk_built == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: videowallpaper-debug-apk-${{ needs.plan.outputs.version_name }}
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce Gate 1
+        if: ${{ !cancelled() }}
+        run: |
+          FAIL=0
+          ls ci-status/*.tsv > /dev/null 2>&1 || { echo "::error::No check results were recorded"; exit 1; }
+          for f in ci-status/*.tsv; do
+            IFS=$'\t' read -r id status rc desc < "$f"
+            [ "$status" = "FAIL" ] || continue
+            if [ "$id" = "lint" ] && [ "$STRICT_LINT" != "true" ]; then
+              echo "::warning title=Lint reported problems::$desc (not failing the run: strict_lint=false)"
+              continue
+            fi
+            echo "::error title=Gate 1 failed::$id - $desc"; FAIL=1
+          done
+          exit $FAIL
+
+  # ------------------------------------------------------------------------------------------------
+  build-release:
+    name: Release FOSS APK (R8)
+    needs: plan
+    if: needs.plan.outputs.build_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VN: ${{ needs.plan.outputs.version_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-android-build
+
+      - name: Check signing secrets
+        id: signing
+        env:
+          SIGN_KEY: ${{ secrets.SIGNING_KEY || secrets.SIGN_KEY || secrets.KEYSTORE_BASE64 }}
+          ALIAS: ${{ secrets.ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          PUBLISH: ${{ needs.plan.outputs.publish }}
+        run: |
+          if [ -n "$SIGN_KEY" ] && [ -n "$ALIAS" ] && [ -n "$KEY_PASSWORD" ] && [ -n "$KEY_STORE_PASSWORD" ]; then
+            printf '%s' "$SIGN_KEY" | tr -d '[:space:]' | base64 -d > "${{ runner.temp }}/release.keystore"
+            test -s "${{ runner.temp }}/release.keystore"
+            echo "KEYSTORE_FILE=${{ runner.temp }}/release.keystore" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            if [ "$PUBLISH" = "true" ]; then
+              echo "::error::Publishing needs signing secrets (SIGNING_KEY/KEYSTORE_BASE64, ALIAS/KEY_ALIAS, KEY_PASSWORD, KEY_STORE_PASSWORD/KEYSTORE_PASSWORD)."
+              exit 1
+            fi
+            echo "::warning::No signing secrets: FOSS release APK will be unsigned."
+          fi
+
+      - name: Build FOSS release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          chmod +x .github/scripts/*.sh
+          source .github/scripts/ci-step.sh
+          ci_step release-apk "Assemble FOSS release APK (R8 minify + shrink)" \
+            gradle :app:assembleFossRelease --stacktrace
+
+          mkdir -p out
+          APK=$(find app/build/outputs/apk/foss/release -name "*.apk" | head -n1)
+          if [ -z "$APK" ]; then
+            ci_record release-apk FAIL "FOSS release APK was not produced"
+            ci_record release-apk-verify FAIL "FOSS release APK was not produced"
+          elif [ "$SIGNED" = "true" ]; then
+            cp "$APK" "out/videowallpaper-foss-release-$VN.apk"
+            ci_step release-apk-verify "FOSS release APK: package name + valid signature" \
+              bash .github/scripts/verify-apk.sh "out/videowallpaper-foss-release-$VN.apk"
+          else
+            cp "$APK" "out/videowallpaper-foss-release-unsigned-$VN.apk"
+            ci_record release-apk-verify NOT_RUN "Unsigned release APK (no signing secrets configured)"
+          fi
+          mkdir -p release-extras
+          find app/build/outputs/mapping -type f -exec cp {} release-extras/ \; 2>/dev/null || true
+
+      - name: Upload release APK
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: videowallpaper-release-apk-${{ needs.plan.outputs.version_name }}
+          path: out/*.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload release build logs (+ R8 mapping)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build-logs
+          path: |
+            ci-logs/
+            ci-status/
+            release-extras/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail if the release build failed
+        if: ${{ !cancelled() }}
+        run: |
+          FAIL=0
+          for f in ci-status/*.tsv; do
+            IFS=$'\t' read -r id status rc desc < "$f"
+            [ "$status" = "FAIL" ] && { echo "::error::$id - $desc"; FAIL=1; }
+          done
+          exit $FAIL
+
+  # ------------------------------------------------------------------------------------------------
+  # Stage 2: emulator checks (launch, settings activity, lifecycle cycles, crash/ANR)
+  device-tests:
+    name: "Stage 2: emulator checks"
+    needs: [plan, verify]
+    if: ${{ !cancelled() && needs.plan.outputs.run_device == 'true' && needs.verify.outputs.apk_built == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VN: ${{ needs.plan.outputs.version_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-android-build
+
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: videowallpaper-debug-apk-${{ needs.plan.outputs.version_name }}
+          path: apks
+
+      - name: Make scripts executable
+        run: chmod +x .github/scripts/*.sh
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run emulator checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash .github/scripts/device-tests.sh apks/videowallpaper-debug-${{ needs.plan.outputs.version_name }}.apk device-out ${{ needs.plan.outputs.cycles }}
+
+      - name: Upload logcat & screenshot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-logcat
+          path: |
+            device-out/app-logcat.txt
+            device-out/logcat-crash.txt
+            device-out/final-screen.png
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload device test logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-test-logs
+          path: |
+            device-out/ci-logs/
+            device-out/ci-status/
+            device-out/*.txt
+            !device-out/app-logcat.txt
+            !device-out/logcat-crash.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Enforce emulator checks
+        if: ${{ !cancelled() }}
+        run: |
+          FAIL=0
+          for f in device-out/ci-status/*.tsv; do
+            [ -e "$f" ] || { echo "::error::no emulator results were recorded"; exit 1; }
+            IFS=$'\t' read -r id status rc desc < "$f"
+            [ "$status" = "FAIL" ] && { echo "::error title=Emulator check failed::$id - $desc"; FAIL=1; }
+          done
+          exit $FAIL
+
+  # ------------------------------------------------------------------------------------------------
+  report:
+    name: QA + failure report
+    needs: [plan, verify, build-release, device-tests]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Build reports
+        env:
+          VERSION_NAME: ${{ needs.plan.outputs.version_name }}
+          STRICT_LINT: ${{ needs.plan.outputs.strict_lint }}
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 .github/scripts/qa_report.py artifacts report-out
+          mkdir -p qa-report failure-report
+          cp report-out/qa-report.md qa-report/
+          cp report-out/failure-report.md failure-report/
+          { cat report-out/qa-report.md; echo; echo '---'; echo; cat report-out/failure-report.md; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload QA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report
+          path: qa-report/
+          retention-days: 90
+
+      - name: Upload failure report
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-report
+          path: failure-report/
+          retention-days: 90
+
+  # ------------------------------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [plan, verify, build-release, device-tests, report]
+    if: >-
+      ${{ !cancelled()
+          && needs.plan.outputs.publish == 'true'
+          && needs.verify.result == 'success'
+          && needs.build-release.result == 'success'
+          && (needs.device-tests.result == 'success' || needs.device-tests.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download APKs and QA report
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '{videowallpaper-debug-apk-*,videowallpaper-release-apk-*,qa-report}'
+          merge-multiple: true
+          path: release-files
+
+      - name: Write release notes
+        env:
+          VN: ${{ needs.plan.outputs.version_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "VideoLiveWallpaper **$VN** from \`${SHA::7}\`."
+            echo
+            echo "> Built and verified by CI (Gate 1 build/unit tests/lint + Stage 2 emulator checks). See the attached \`qa-report.md\`."
+            echo
+            sed -n '/^## Release-readiness gates/,/^Release rule/p' release-files/qa-report.md | sed '$d'
+          } > release-notes.md
+          ls -la release-files
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.plan.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: VideoLiveWallpaper ${{ needs.plan.outputs.version_name }}
+          body_path: release-notes.md
+          generate_release_notes: true
+          prerelease: ${{ needs.plan.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            release-files/*.apk
+            release-files/qa-report.md
